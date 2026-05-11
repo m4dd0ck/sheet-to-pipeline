@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Generated data and warehouse
+data/
+
+# dbt artifacts
+target/
+dbt_packages/
+logs/
+.user.yml
+
+# Built outputs
+site/
+output/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Secrets
+.env
