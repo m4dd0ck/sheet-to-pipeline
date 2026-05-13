@@ -9,12 +9,15 @@ wrong, the way they do in real workbooks:
   VLOOKUP returns the first match, so the workbook kept using the old prices.
 """
 
+import csv
 import random
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
 from openpyxl import Workbook
+from openpyxl.styles import Font
 
 BUSINESS = "Hartwell Bakery Supply"
 MONTHS = [f"2024-{m:02d}" for m in range(1, 7)]
@@ -22,6 +25,9 @@ PRICE_CHANGE = date(2024, 4, 1)
 DUPLICATED_MONTH = "2024-03"
 DUPLICATED_ROWS = 25
 RAW_HEADER = ["Date", "Invoice #", "Customer", "Product Code", "Qty", "Rep Code"]
+SUMMARY_HEADER = [
+    "Month", "Revenue", "Units", "Invoices", "Avg Invoice", "North", "South", "Central", "Top Rep",
+]  # fmt: skip
 
 PRODUCTS = [
     ("BR-01", "Sourdough loaf", "Bread", 4.20), ("BR-02", "Seeded rye", "Bread", 4.60),
@@ -109,11 +115,80 @@ def build_legacy_workbook(path: Path, seed: int = 12) -> Path:
 
     for month, lines in month_lines(seed).items():
         sheet = workbook.create_sheet(f"Raw - {month}")
-        sheet.append(RAW_HEADER)
+        sheet.append([*RAW_HEADER, "Unit Price", "Revenue", "Region"])
         pasted = lines + (lines[:DUPLICATED_ROWS] if month == DUPLICATED_MONTH else [])
         for row, line in enumerate(pasted, start=2):
-            sheet.append(line.cells())
+            sheet.append(
+                [
+                    *line.cells(),
+                    f"=VLOOKUP(D{row},Products!$A:$D,4,FALSE)",
+                    f"=E{row}*G{row}",
+                    f"=VLOOKUP(F{row},Reps!$A:$C,3,FALSE)",
+                ]
+            )
             sheet.cell(row, 1).number_format = "dd/mm/yyyy"
+    _add_summary(workbook, seed)
     path.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(path)
+    return path
+
+
+def _add_summary(workbook: Workbook, seed: int) -> None:
+    """Totals typed in by hand each month - computed here the way the formulas produce them."""
+    summary = workbook.create_sheet("Summary", 0)
+    summary.append([f"{BUSINESS} - Monthly Sales Summary"])
+    summary.append(["Updated by hand each month from the Raw tabs. Do not sort."])
+    summary.append([])
+    summary.append(SUMMARY_HEADER)
+    summary["A1"].font = Font(bold=True, size=14)
+    for cell in summary[4]:
+        cell.font = Font(bold=True)
+    for row in legacy_summary(seed):
+        summary.append(row)
+        for column in range(2, 9):
+            if column != 4:
+                summary.cell(summary.max_row, column).number_format = "#,##0.00"
+
+
+def legacy_summary(seed: int = 12) -> list[list[object]]:
+    """Summary rows as the workbook computes them: first-match prices, duplicates included."""
+    first_price = {code: price for code, _, _, price in PRODUCTS}
+    region_of = {code: region for code, _, region in REPS}
+    rows = []
+    for month, lines in month_lines(seed).items():
+        pasted = lines + (lines[:DUPLICATED_ROWS] if month == DUPLICATED_MONTH else [])
+        revenue = sum(line.qty * first_price[line.product] for line in pasted)
+        by_region: dict[str, float] = defaultdict(float)
+        by_rep: dict[str, float] = defaultdict(float)
+        for line in pasted:
+            value = line.qty * first_price[line.product]
+            by_region[region_of[line.rep]] += value
+            by_rep[line.rep] += value
+        invoices = len({line.invoice for line in pasted})
+        top_rep = max(by_rep, key=lambda rep: by_rep[rep])
+        rows.append(
+            [
+                date.fromisoformat(f"{month}-01").strftime("%b %Y"),
+                round(revenue, 2),
+                sum(line.qty for line in pasted),
+                invoices,
+                round(revenue / invoices, 2),
+                round(by_region["North"], 2),
+                round(by_region["South"], 2),
+                round(by_region["Central"], 2),
+                next(name for code, name, _ in REPS if code == top_rep),
+            ]
+        )
+    return rows
+
+
+def write_month_csv(path: Path, month: str, seed: int = 99) -> Path:
+    """Next month's export as the order system emails it: a CSV with the same columns."""
+    lines = generate_lines(month, random.Random(seed))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(RAW_HEADER)
+        for line in lines:
+            writer.writerow([line.day.isoformat(), *line.cells()[1:]])
     return path
