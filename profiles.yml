@@ -1,0 +1,7 @@
+sheet_to_pipeline:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('S2P_DB_PATH', 'output/sales.duckdb') }}"
+      threads: 4

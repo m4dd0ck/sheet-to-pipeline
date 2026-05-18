@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Loaded by `s2p extract` from the workbook's raw tabs and monthly CSV drops.
+    schema: raw
+    tables:
+      - name: sales_lines
+      - name: products
+      - name: reps
