@@ -1,0 +1,23 @@
+name: sheet_to_pipeline
+version: '0.1.0'
+config-version: 2
+
+profile: sheet_to_pipeline
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+# Reason: pytest owns tests/, so dbt singular tests live in data_tests/
+test-paths: ["data_tests"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  sheet_to_pipeline:
+    staging:
+      +materialized: view
+      +schema: staging
+    marts:
+      +materialized: table
+      +schema: marts
