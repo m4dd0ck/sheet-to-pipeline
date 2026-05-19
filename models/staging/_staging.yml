@@ -1,0 +1,37 @@
+version: 2
+
+models:
+  - name: stg_sales_lines
+    description: Every pasted line, with exact repeats within a month flagged.
+    columns:
+      - name: line_key
+        data_tests: [not_null]
+      - name: product_code
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_products')
+                field: product_code
+      - name: rep_code
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('stg_reps')
+                field: rep_code
+
+  - name: stg_products
+    description: Price list with effective_from (inclusive) and effective_to (exclusive).
+    columns:
+      - name: unit_price
+        data_tests: [not_null]
+
+  - name: stg_reps
+    columns:
+      - name: rep_code
+        data_tests: [unique, not_null]
+      - name: region
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['North', 'South', 'Central']
