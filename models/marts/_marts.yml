@@ -1,0 +1,13 @@
+version: 2
+
+models:
+  - name: fct_sales_lines
+    description: Real invoice lines (paste repeats removed), priced on the sale date.
+    columns:
+      - name: line_key
+        data_tests: [unique, not_null]
+      - name: unit_price
+        description: Null would mean no price was in force on the sale date.
+        data_tests: [not_null]
+      - name: region
+        data_tests: [not_null]
