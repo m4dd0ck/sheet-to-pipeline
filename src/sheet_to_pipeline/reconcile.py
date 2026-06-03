@@ -121,3 +121,77 @@ def compare(workbook: Path, db_path: Path) -> list[MonthCheck]:
                 check.differences.append(Difference(measure, float(was), float(now)))
         checks.append(check)
     return checks
+
+
+# The workbook priced every line at the first row for its code in Products (VLOOKUP's rule).
+LEGACY_PRICES = """
+    select product_code, unit_price as legacy_price
+    from staging.stg_products
+    qualify row_number() over (partition by product_code order by effective_from) = 1
+"""
+
+
+def explain(checks: list[MonthCheck], db_path: Path) -> list[MonthCheck]:
+    """Attach the causes behind each month's revenue gap, with the rows that prove them."""
+    with duckdb.connect(str(db_path), read_only=True) as connection:
+        for check in checks:
+            if check.differences:
+                check.causes = _repeats(connection, check.month) + _stale(connection, check.month)
+    return checks
+
+
+def _repeats(connection: duckdb.DuckDBPyConnection, month: str) -> list[Cause]:
+    row = connection.execute(
+        f"""
+        with legacy as ({LEGACY_PRICES})
+        select count(*), sum(lines.qty * legacy.legacy_price), min(source_row),
+               max(source_row), any_value(source)
+        from staging.stg_sales_lines as lines
+        inner join legacy using (product_code)
+        where lines.month = ? and lines.is_repeat_paste
+        """,
+        [month],
+    ).fetchone()
+    if not row or not row[0]:
+        return []
+    count, revenue, first_row, last_row, source = row
+    return [
+        Cause(
+            kind="repeated_paste",
+            revenue_effect=-round(float(revenue), 2),
+            summary=f"{count} lines were pasted twice, adding {float(revenue):,.2f} of revenue "
+            "that never happened.",
+            evidence=[f"{source}, rows {first_row}-{last_row} repeat earlier lines exactly"],
+        )
+    ]
+
+
+def _stale(connection: duckdb.DuckDBPyConnection, month: str) -> list[Cause]:
+    rows = connection.execute(
+        f"""
+        with legacy as ({LEGACY_PRICES})
+        select lines.product_code, lines.product_name, legacy.legacy_price, lines.unit_price,
+               sum(lines.qty), sum(lines.qty * (lines.unit_price - legacy.legacy_price))
+        from marts.fct_sales_lines as lines
+        inner join legacy using (product_code)
+        where lines.month = ? and lines.unit_price != legacy.legacy_price
+        group by all
+        order by 1
+        """,
+        [month],
+    ).fetchall()
+    if not rows:
+        return []
+    effect = round(sum(float(r[5]) for r in rows), 2)
+    return [
+        Cause(
+            kind="stale_price",
+            revenue_effect=effect,
+            summary=f"{len(rows)} products were priced at their old price; the new prices "
+            f"from Products were never used, understating revenue by {effect:,.2f}.",
+            evidence=[
+                f"{code} {name}: {int(qty)} sold at {float(old):.2f} instead of {float(new):.2f}"
+                for code, name, old, new, qty, _ in rows
+            ],
+        )
+    ]
