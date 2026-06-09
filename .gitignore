@@ -31,3 +31,6 @@ output/
 
 # Secrets
 .env
+
+# Generated "before" workbook
+legacy/
