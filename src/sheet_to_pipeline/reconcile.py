@@ -49,6 +49,7 @@ class Cause:
 class MonthCheck:
     month: str
     label: str
+    is_new: bool = False  # the month was never in the workbook, so there is nothing to compare
     differences: list[Difference] = field(default_factory=list)
     causes: list[Cause] = field(default_factory=list)
 
@@ -63,6 +64,8 @@ class MonthCheck:
 
     @property
     def status(self) -> str:
+        if self.is_new:
+            return "new"
         if not self.differences:
             return "match"
         return "explained" if abs(self.unexplained) < 0.01 else "unexplained"
@@ -110,10 +113,13 @@ def compare(workbook: Path, db_path: Path) -> list[MonthCheck]:
     reported = read_workbook_summary(workbook)
     checks = []
     for label, (month, computed) in pipeline_summary(db_path).items():
+        if label not in reported:
+            checks.append(MonthCheck(month=month, label=label, is_new=True))
+            continue
         check = MonthCheck(month=month, label=label)
-        old = reported.get(label, {})
+        old = reported[label]
         for measure in SUMMARY_HEADER[1:]:
-            was, now = old.get(measure, "missing"), computed[measure]
+            was, now = old.get(measure, "blank"), computed[measure]
             if isinstance(was, str) or isinstance(now, str):
                 if was != now:
                     check.differences.append(Difference(measure, was, now))
