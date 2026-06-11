@@ -38,7 +38,9 @@ def write_excel_report(db_path: Path, checks: list[MonthCheck], path: Path) -> P
         cell.font = Font(bold=True)
     for check in checks:
         revenue = next((d for d in check.differences if d.measure == "Revenue"), None)
-        why = " ".join(cause.summary for cause in check.causes) or "Matches the old workbook."
+        why = " ".join(cause.summary for cause in check.causes) or (
+            "First month produced by the pipeline." if check.is_new else "Matches the old workbook."
+        )
         notes.append(
             [
                 check.label,
