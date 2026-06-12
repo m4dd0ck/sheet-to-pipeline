@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from openpyxl import Workbook
+from openpyxl.cell.cell import Cell, MergedCell
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
@@ -27,6 +28,7 @@ def write_excel_report(db_path: Path, checks: list[MonthCheck], path: Path) -> P
         cell.font = Font(bold=True)
     for label, (_, values) in pipeline_summary(db_path).items():
         summary.append([label, *(values[measure] for measure in SUMMARY_HEADER[1:])])
+        _as_text(summary[summary.max_row])
         for column in (2, 5, 6, 7, 8):
             summary.cell(summary.max_row, column).number_format = "#,##0.00"
     for index, width in enumerate(WIDTHS, start=1):
@@ -55,3 +57,10 @@ def write_excel_report(db_path: Path, checks: list[MonthCheck], path: Path) -> P
     path.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(path)
     return path
+
+
+def _as_text(cells: tuple[Cell | MergedCell, ...]) -> None:
+    """Keep text that starts with "=" as text; openpyxl would otherwise store it as a formula."""
+    for cell in cells:
+        if isinstance(cell.value, str) and cell.value.startswith("="):
+            cell.data_type = "s"
