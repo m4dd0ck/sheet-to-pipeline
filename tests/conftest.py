@@ -17,6 +17,7 @@ def run_dbt(db_path: Path, workdir: Path) -> None:
             "build",
             "--profiles-dir",
             ".",
+            "--no-partial-parse",
             "--target-path",
             str(workdir / "target"),
             "--log-path",

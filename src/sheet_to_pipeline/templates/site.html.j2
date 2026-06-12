@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SheetToPipeline - {{ business }}</title>
+<style>
+  :root { --bg: #fbfaf8; --panel: #fff; --text: #1d1d1f; --muted: #6b6b70; --line: #e6e3de;
+    --good: #1f7a4d; --warn: #9a6700; --bad: #b42318; --accent: #2e5e4e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #141415; --panel: #1c1c1e; --text: #ececed; --muted: #a0a0a6; --line: #2e2e31;
+      --good: #6fd3a0; --warn: #f5c451; --bad: #ff8a80; --accent: #8fd1b5; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 820px; margin: 0 auto; padding: 48px 20px 80px; }
+  h1 { font-size: 32px; line-height: 1.2; margin: 0 0 10px; }
+  h2 { font-size: 21px; margin: 44px 0 10px; }
+  .lead { color: var(--muted); font-size: 18px; margin: 0 0 28px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .panel h3 { margin: 0 0 6px; font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  ol { padding-left: 20px; margin: 6px 0; } li { margin: 3px 0; }
+  .big { font-size: 28px; font-weight: 700; display: block; }
+  .bad { color: var(--bad); } .warn { color: var(--warn); } .good { color: var(--good); }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--panel); }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  td:first-child { white-space: nowrap; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .evidence { color: var(--muted); font-size: 13px; margin: 4px 0 0; padding-left: 16px; }
+  code { font: 13.5px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+  pre { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow-x: auto; }
+  a.button { display: inline-block; background: var(--accent); color: var(--bg); text-decoration: none;
+    padding: 9px 15px; border-radius: 8px; font-weight: 600; margin: 4px 8px 4px 0; }
+  footer { margin-top: 56px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>From a monthly spreadsheet to a tested pipeline</h1>
+  <p class="lead">{{ business }} (a fictional wholesale supplier) ran its sales reporting on one Excel
+    workbook. This is the rebuild: same inputs, same report layout, every number checked against the
+    old workbook, and two errors the workbook had been carrying found and explained.</p>
+
+  <div class="grid">
+    <div class="panel"><h3>Overstated</h3><span class="big bad">{{ "{:,.2f}".format(overstated) }}</span>
+      revenue from lines pasted twice</div>
+    <div class="panel"><h3>Understated</h3><span class="big warn">{{ "{:,.2f}".format(understated) }}</span>
+      from prices that never updated</div>
+    <div class="panel"><h3>Matched</h3><span class="big good">{{ checks | selectattr("status", "equalto", "match") | list | length }} of {{ checks | length }}</span>
+      months identical to the cent</div>
+  </div>
+
+  <h2>Before: the monthly routine</h2>
+  <div class="grid">
+    <div class="panel"><h3>Every month, by hand</h3>
+      <ol>
+        <li>Export last month's orders from the order system.</li>
+        <li>Add a <code>Raw - YYYY-MM</code> tab and paste them in.</li>
+        <li>Drag the VLOOKUP price, revenue and region formulas down.</li>
+        <li>Total it up and type the numbers into the Summary tab.</li>
+        <li>Send the Summary to the owner and the reps.</li>
+      </ol></div>
+    <div class="panel"><h3>What can go wrong</h3>
+      <ol>
+        <li>A paste goes in twice and nothing notices.</li>
+        <li>A new price is added under the old one; VLOOKUP keeps finding the old one.</li>
+        <li>A formula isn't dragged far enough.</li>
+        <li>A typed total doesn't match the tab it came from.</li>
+      </ol></div>
+  </div>
+
+  <h2>After: one command</h2>
+<pre>s2p new-month 2024-07      # the order system's export lands in data/incoming/
+s2p all                    # extract, build, test, reconcile, write the report</pre>
+  <p>Inputs are the same exports. dbt models price every line from the product list in force on the
+    sale date, flag repeated lines instead of counting them, and a build fails if any pasted line is
+    unaccounted for or any line has no price. The report comes out in the exact layout of the old
+    Summary tab, with a Checks sheet explaining every difference from the old workbook.</p>
+
+  <h2>What the rebuild found</h2>
+  <div class="scroll"><table>
+    <tr><th>Month</th><th>Status</th><th>Workbook said</th><th>Pipeline says</th><th>Why</th></tr>
+    {% for c in checks %}
+    {% set rev = c.differences | selectattr("measure", "equalto", "Revenue") | first %}
+    <tr>
+      <td>{{ c.label }}</td>
+      <td class="{{ 'good' if c.status == 'match' else 'warn' }}">{{ c.status }}</td>
+      <td class="num">{{ "{:,.2f}".format(rev.workbook) if rev else "" }}</td>
+      <td class="num">{{ "{:,.2f}".format(rev.pipeline) if rev else "" }}</td>
+      <td>{% for cause in c.causes %}{{ cause.summary }}
+        <ul class="evidence">{% for e in cause.evidence %}<li>{{ e }}</li>{% endfor %}</ul>{% endfor %}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+
+  <h2>The report they still get</h2>
+  <div class="scroll"><table>
+    <tr>{% for h in header %}<th>{{ h }}</th>{% endfor %}</tr>
+    {% for label, cells in summary %}
+    <tr><td>{{ label }}</td>
+      {% for cell in cells %}<td class="{{ '' if loop.last else 'num' }}">{{ cell }}</td>{% endfor %}
+    </tr>
+    {% endfor %}
+  </table></div>
+  <p><a class="button" href="downloads/Monthly%20Sales%20Report%20(before).xlsx">Download the old workbook</a>
+     <a class="button" href="downloads/Monthly%20Sales%20Report%20(after).xlsx">Download the new report</a></p>
+
+  <footer>Business and data are synthetic. Code: github.com/m4dd0ck/sheet-to-pipeline</footer>
+</main>
+</body>
+</html>
