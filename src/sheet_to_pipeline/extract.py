@@ -41,7 +41,8 @@ def extract(workbook: Path, incoming: Path | None, db_path: Path) -> dict[str, i
         for path in sorted(incoming.glob("*.csv")):
             rows = _read_csv(path)
             if rows and rows[0][0] in seen:
-                raise ExtractError(f"{rows[0][0]} is in both the workbook and {path.name}")
+                raise ExtractError(f"{rows[0][0]} arrives twice (again in {path.name})")
+            seen.update(row[0] for row in rows)
             sales += rows
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -98,8 +99,9 @@ def _read_csv(path: Path) -> list[SalesRow]:
     match = CSV_NAME.match(path.name)
     if not match:
         raise ExtractError(f"Monthly drops must be named YYYY-MM.csv, got {path.name}")
-    with path.open(newline="", encoding="utf-8-sig") as handle:
-        rows = list(csv.reader(handle))
+    rows = _csv_rows(path)
+    if not rows:
+        raise ExtractError(f"{path.name} is empty")
     _check_header(rows[0], path.name)
     return [
         _sales_row(match.group(1), path.name, number, list(row))
@@ -108,16 +110,43 @@ def _read_csv(path: Path) -> list[SalesRow]:
     ]
 
 
+def _csv_rows(path: Path) -> list[list[str]]:
+    """Rows of a CSV, accepting UTF-8 (with or without BOM) or Windows-1252 exports."""
+    for encoding in ("utf-8-sig", "cp1252"):
+        try:
+            with path.open(newline="", encoding=encoding) as handle:
+                return list(csv.reader(handle))
+        except UnicodeDecodeError:
+            continue
+        except csv.Error as error:
+            raise ExtractError(f"{path.name}: not a readable CSV ({error})") from error
+    raise ExtractError(f"{path.name}: unknown text encoding; save it as UTF-8")
+
+
 def _check_header(header: Sequence[object], source: str) -> None:
     if [str(cell).strip() if cell else "" for cell in header[: len(RAW_HEADER)]] != RAW_HEADER:
         raise ExtractError(f"{source}: expected columns {RAW_HEADER}, got {header}")
 
 
 def _sales_row(month: str, source: str, number: int, row: list[object]) -> SalesRow:
+    """One validated line. Any problem names the file and row so it can be fixed at source."""
+    if len(row) < len(RAW_HEADER):
+        raise ExtractError(f"{source} row {number}: expected {len(RAW_HEADER)} columns")
     day, invoice, customer, product, qty, rep = row[:6]
+    try:
+        sale_date = _to_date(day)
+        quantity = float(str(qty).strip())
+    except ValueError as error:
+        raise ExtractError(f"{source} row {number}: {error}") from error
+    if not quantity.is_integer():
+        raise ExtractError(f"{source} row {number}: quantity {qty!r} is not a whole number")
+    # Reason: the month comes from the tab or file name; a date from another month would put
+    # the line in the wrong period and collide with that month's label downstream.
+    if sale_date.strftime("%Y-%m") != month:
+        raise ExtractError(f"{source} row {number}: {sale_date} is outside {month}")
     return (
-        month, source, number, _to_date(day), str(invoice).strip(), str(customer).strip(),
-        str(product).strip(), int(str(qty)), str(rep).strip(),
+        month, source, number, sale_date, str(invoice).strip(), str(customer).strip(),
+        str(product).strip(), int(quantity), str(rep).strip(),
     )  # fmt: skip
 
 
@@ -126,7 +155,11 @@ def _to_date(value: object) -> date:
         return value.date()
     if isinstance(value, date):
         return value
-    return date.fromisoformat(str(value).strip()[:10])
+    text = str(value).strip() if value is not None else ""
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        raise ValueError(f"date {text!r} is not YYYY-MM-DD") from None
 
 
 def _bulk_insert(
