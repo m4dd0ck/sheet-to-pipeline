@@ -1497,7 +1497,7 @@ wheels = [
 
 [[package]]
 name = "sheet-to-pipeline"
-version = "0.1.0"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "dbt-core" },
