@@ -194,7 +194,6 @@ The full list is `RUNBOOK.md` §Validate. Paths the docs name that never exist i
 - `RUNBOOK.md`: on open, on close, the monthly run, release, deploy, restore.
 - `CLAUDE.md`: rules for agents working here.
 - `TASK.md`: what is open.
-- `~/developer/hq/CONVENTIONS.md`: release and commit conventions across the owner's repos.
 
 ## License
 
