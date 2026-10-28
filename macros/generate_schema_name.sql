@@ -1,6 +1,6 @@
 {#
     Use the configured schema name as-is (staging, marts, ...) instead of dbt's default
-    <target>_<custom> prefixing, so MetricForge and Evidence can reference stable names.
+    <target>_<custom> prefixing, so the reconcile step's SQL can name staging.* and marts.*.
 #}
 {% macro generate_schema_name(custom_schema_name, node) -%}
     {%- if custom_schema_name is none -%}
